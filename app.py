@@ -123,6 +123,11 @@ def gerar_json(body: RelatorioInput, x_api_key: Optional[str] = Header(default=N
     out_path = os.path.join(FILES_DIR, out_name)
     doc.save(out_path)
 
-    return JSONResponse({"status": "ok","message": "Relatório gerado no modelo oficial.","docx_url": f"/files/{out_name}"})
-
+   BASE_URL = os.getenv("BASE_URL", "")
+...
+return JSONResponse({
+    "status": "ok",
+    "message": "Relatório gerado no modelo oficial.",
+    "docx_url": f"{BASE_URL}/files/{out_name}"
+})
 app.mount("/files", StaticFiles(directory=FILES_DIR), name="files")

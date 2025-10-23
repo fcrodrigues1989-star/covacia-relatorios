@@ -1,5 +1,8 @@
+# app.py — CovacIA Relatórios Online (versão direta + BASE_URL)
+# --------------------------------------------------------------
+# Esta versão gera relatórios jurídicos nos modelos oficiais da Covac.
+# Agora com BASE_URL configurável para que os links retornem completos (clicáveis).
 
-# app.py — CovacIA Gerador Online (multi-modelo, simples e compatível)
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -9,7 +12,11 @@ from docx import Document
 from datetime import datetime
 import os
 
-API_KEY = os.getenv("API_KEY")  # Defina no Render para restringir acesso (opcional e recomendado)
+# --------------------------------------------------------------
+# CONFIGURAÇÕES INICIAIS
+# --------------------------------------------------------------
+API_KEY = os.getenv("API_KEY")  # chave opcional para controle de acesso
+BASE_URL = os.getenv("BASE_URL", "")  # endereço base do Render (ex: https://covacia-relatorios.onrender.com)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
@@ -24,6 +31,9 @@ TEMPLATE_MAP = {
     "decisao_monocratica": "MODELO_RELATORIO_DECISAO_MONOCRATICA.docx",
 }
 
+# --------------------------------------------------------------
+# MODELO DE DADOS
+# --------------------------------------------------------------
 class RelatorioInput(BaseModel):
     tipo: Optional[str] = "sentenca"
     parte_requerente: Optional[str] = None
@@ -38,24 +48,35 @@ class RelatorioInput(BaseModel):
     obrig_pagar: Optional[str] = None
     procedimento: Optional[str] = None
 
-app = FastAPI(title="CovacIA – Gerador de Relatórios (online)")
+# --------------------------------------------------------------
+# FUNÇÃO AUXILIAR
+# --------------------------------------------------------------
+def _val(x: Optional[str], padrao: str = "Não há.") -> str:
+    return x.strip() if (x and x.strip()) else padrao
+
+# --------------------------------------------------------------
+# APP FASTAPI
+# --------------------------------------------------------------
+app = FastAPI(title="CovacIA – Gerador de Relatórios (Online)")
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-def _val(x: Optional[str], padrao: str = "Não há.") -> str:
-    return x.strip() if (x and x.strip()) else padrao
-
+# --------------------------------------------------------------
+# ENDPOINT PRINCIPAL — /gerar-json
+# --------------------------------------------------------------
 @app.post("/gerar-json")
 def gerar_json(body: RelatorioInput, x_api_key: Optional[str] = Header(default=None)):
+    # segurança opcional
     if API_KEY and x_api_key != API_KEY:
-        raise HTTPException(status_code=401, detail="Acesso não autorizado (X-API-Key ausente/errada)")
+        raise HTTPException(status_code=401, detail="Acesso não autorizado (X-API-Key ausente ou incorreta)")
 
     tipo = (body.tipo or "sentenca").lower()
     template_name = TEMPLATE_MAP.get(tipo)
     if not template_name:
         raise HTTPException(status_code=400, detail="Tipo inválido. Use: sentenca, acordo, ms_sentenca, acordao, decisao_monocratica.")
+    
     template_path = os.path.join(TEMPLATES_DIR, template_name)
     if not os.path.exists(template_path):
         raise HTTPException(status_code=400, detail=f"Modelo não encontrado: {template_name}")
@@ -97,7 +118,6 @@ def gerar_json(body: RelatorioInput, x_api_key: Optional[str] = Header(default=N
     for table in doc.tables:
         for ri, row in enumerate(table.rows):
             row_text = " | ".join(c.text.strip() for c in row.cells)
-
             for ci, cell in enumerate(row.cells):
                 label = cell.text.strip()
                 if label in dois_campos and ci + 1 < len(row.cells):
@@ -106,8 +126,8 @@ def gerar_json(body: RelatorioInput, x_api_key: Optional[str] = Header(default=N
                     cell.text = rotulo_decisao
 
             labels_blocos = [
-                "Síntese dos fatos | Inicial", "Síntese dos fatos",
-                "Informações", "Sentença", "Acórdão", "Decisão Monocrática",
+                "Síntese dos fatos | Inicial", "Síntese dos fatos", "Informações",
+                "Sentença", "Acórdão", "Decisão Monocrática",
                 "Obrigação de fazer", "Obrigação de pagar",
                 "Procedimento de pagamento e/ou cumprimento de obrigação"
             ]
@@ -123,11 +143,15 @@ def gerar_json(body: RelatorioInput, x_api_key: Optional[str] = Header(default=N
     out_path = os.path.join(FILES_DIR, out_name)
     doc.save(out_path)
 
-   BASE_URL = os.getenv("BASE_URL", "")
-...
-return JSONResponse({
-    "status": "ok",
-    "message": "Relatório gerado no modelo oficial.",
-    "docx_url": f"{BASE_URL}/files/{out_name}"
-})
+    # 🔗 Retorno agora vem com o link completo
+    return JSONResponse({
+        "status": "ok",
+        "message": "Relatório gerado no modelo oficial.",
+        "docx_url": f"{BASE_URL}/files/{out_name}"
+    })
+
+# --------------------------------------------------------------
+# ARQUIVOS GERADOS — /files
+# --------------------------------------------------------------
 app.mount("/files", StaticFiles(directory=FILES_DIR), name="files")
+
